@@ -5,13 +5,16 @@
   var index = null;
   function getIndex() { return index || (index = N.json('/data/index.json')); }
 
+  /* a sponsor picture that does not load leaves no broken-picture box */
+  d.addEventListener('error', function (e) { var t = e.target; if (t && t.tagName === 'IMG' && t.closest && t.closest('.sponsor')) t.remove(); }, true);
+
   /* tap an IFSC code in a table to copy it */
   d.addEventListener('click', function (e) {
     var td = e.target.closest('[data-ifsc-table] td.mono');
     if (td) N.copy(td.textContent.trim(), td.textContent.trim() + ' copied');
   });
   $$('[data-ifsc-table] td.mono').slice(0, 400).forEach(function (td) { td.title = 'Tap to copy'; });
-  var st = d.createElement('style'); st.textContent = '[data-ifsc-table] td.mono{cursor:pointer;color:var(--link);font-weight:500}'; d.head.appendChild(st);
+  var st = d.createElement('style'); st.textContent = '[data-ifsc-table] td.mono{cursor:pointer;color:var(--link)}'; d.head.appendChild(st);
 
   /* filter the branch rows of this page */
   var flt = $('[data-filter]');
