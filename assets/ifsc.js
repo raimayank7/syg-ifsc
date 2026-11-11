@@ -186,14 +186,50 @@
   function edge(el, last) { if (!el) return false; if (el.matches(TOUCHY)) return true; var c = last ? el.lastElementChild : el.firstElementChild; return touchy(c || el); }
   function unit(kind) {
     var box = d.createElement('aside');
-    box.className = 'adbox wrap'; box.setAttribute('aria-label', 'Advertisement');
+    box.className = 'pk-place wrap'; box.setAttribute('aria-label', 'Advertisement');
     var attrs = kind === 'article' ? 'style="display:block;text-align:center" data-ad-layout="in-article" data-ad-format="fluid"'
       : kind === 'multiplex' ? 'style="display:block" data-ad-format="autorelaxed"' : 'style="display:block" data-ad-format="auto" data-full-width-responsive="true"';
     box.innerHTML = '<small>Advertisement</small><ins class="adsbygoogle" ' + attrs + ' data-ad-client="' + CLIENT + '" data-ad-slot="' + UNITS[kind] + '"></ins>';
     return box;
   }
   /* ask for the ad only when its place is about to be seen and has a real width (a place with no width makes the ad script fail) */
-  function fill(box) { if (box._done || !box.isConnected || box.offsetWidth < 120) return; box._done = 1; try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { box.remove(); } }
+  /* a place that gets no ad (none available, ad blocker, no answer) shows a sponsor card instead (owner, 2026-11-11). Never the same
+     sponsor twice on a page. The place at the very end only closes: the page's own sponsor card sits right under it. */
+  var promos = null;
+  function sponsors() {
+    return promos || (promos = fetch('https://share.groupchaton.com/promos.json', { mode: 'cors' }).then(function (r) { return r.json(); }).then(function (j) {
+      var india = /Calcutta|Kolkata/.test((Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || '');
+      return (j.promos || []).filter(function (p) { return p && p.href && !p.own && !(p.india && !india); });
+    }).catch(function () { return []; }));
+  }
+  function card(box) {
+    if (box._card) return;
+    box._card = 1;
+    if (box._end) { box.remove(); return; }
+    /* let the page's own sponsor card (end of the page) choose first, so the two never show the same sponsor */
+    var own = d.querySelector('[data-sponsor]'), wait = own && !own.firstChild && !box._waited ? 1500 : 0;
+    if (wait) { box._waited = 1; box._card = 0; setTimeout(function () { card(box); }, wait); return; }
+    sponsors().then(function (list) {
+      var used = [].map.call(d.querySelectorAll('a.sponsor'), function (a) { return a.getAttribute('href'); });
+      list = list.filter(function (p) { return used.indexOf(p.href) < 0; });
+      if (!list.length) { box.remove(); return; }
+      var p = list[Math.floor(Math.random() * list.length)], esc = window.SYG.esc;
+      var img = p.imgs && p.imgs.length ? p.imgs[Math.floor(Math.random() * p.imgs.length)] : (p.img_icon || '');
+      box.innerHTML = '<a class="sponsor" href="' + esc(p.href) + '" target="_blank" rel="' + (p.family ? 'noopener' : 'sponsored noopener') + '">' +
+        (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" width="72" height="72">' : '') +
+        '<span><small>' + esc(p.family ? 'From GroupChatOn' : (p.tag || 'Sponsored')) + '</small><b>' + esc(p.title || '') + '</b>' + (p.line ? '<span>' + esc(p.line) + '</span>' : '') +
+        (p.cta ? '<em>' + esc(p.cta) + ' →</em>' : '') + '</span></a>';
+      box.setAttribute('aria-label', 'Sponsored');
+      box.classList.add('has-card');
+    });
+  }
+  function watch(box) {
+    var ins = box.querySelector('ins');
+    var state = function () { var st = ins.getAttribute('data-ad-status'); if (st === 'unfilled') card(box); return st; };
+    if ('MutationObserver' in window) new MutationObserver(state).observe(ins, { attributes: true, attributeFilter: ['data-ad-status'] });
+    setTimeout(function () { if (state() !== 'filled') card(box); }, 8000);   // no answer at all: blocked or offline
+  }
+  function fill(box) { if (box._done || !box.isConnected || box.offsetWidth < 120) return; box._done = 1; watch(box); try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { card(box); } }
   var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { fill(e.target); if (e.target._done) io.unobserve(e.target); } }); }, { rootMargin: '700px 0px' }) : null;
   var boxes = [], tick = 0;
   function near() { boxes.forEach(function (b) { if (!b._done && b.getBoundingClientRect().top < innerHeight + 700) fill(b); }); }
@@ -204,7 +240,7 @@
   /* put a unit between two blocks, only where neither neighbour has anything to tap */
   function between(before, kind) {
     var prev = before.previousElementSibling;
-    if (touchy(prev) || edge(before, false) || (prev && prev.classList.contains('adbox'))) return false;   // the block above must have nothing to tap at all
+    if (touchy(prev) || edge(before, false) || (prev && prev.classList.contains('pk-place'))) return false;   // the block above must have nothing to tap at all
     var box = unit(kind);
     before.parentNode.insertBefore(box, before);
     show(box);
@@ -217,16 +253,17 @@
   var placed = 0;
   for (var i = Math.max(last + 1, 1); i < blocks.length && !placed; i++) if (between(blocks[i], 'display')) placed++;
   /* 2. long reading pages: one in-article place before a heading near the middle */
-  var heads = [].slice.call(main.querySelectorAll('.prose h2')).filter(function (h) { return !h.closest('details,.result,.adbox'); });
+  var heads = [].slice.call(main.querySelectorAll('.prose h2')).filter(function (h) { return !h.closest('details,.result,.pk-place'); });
   if (main.offsetHeight > 2600 && heads.length >= 4) {
     for (var k = Math.floor(heads.length / 2); k < heads.length; k++) {
       var h = heads[k], prev = h.previousElementSibling;
-      if (!prev || touchy(prev) || touchy(h.nextElementSibling) || prev.classList.contains('adbox')) continue;
+      if (!prev || touchy(prev) || touchy(h.nextElementSibling) || prev.classList.contains('pk-place')) continue;
       var box = unit('article'); box.classList.remove('wrap');
       h.parentNode.insertBefore(box, h); show(box); placed++; break;
     }
   }
   /* 3. end of the page: related-content (multiplex) place, above the sponsor card and the footer */
   var end = unit('multiplex'), sp = main.querySelector('[data-sponsor]');
+  end._end = 1;
   if (!edge(blocks[blocks.length - 1], true)) { if (sp) main.insertBefore(end, sp); else main.appendChild(end); show(end); }
 })();
