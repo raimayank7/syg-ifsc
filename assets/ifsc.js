@@ -171,3 +171,57 @@
     recent();
   }
 })();
+
+/* AdSense places of this site (the Auto ads script is already in the page frame; these are fixed, labelled places on top of it).
+   Rules (owner): never on the legal pages (body data-ads="0"), never next to a button, a form or the checker's result; a place that
+   gets no ad closes itself. Units of the owner's AdSense account: display, in-article, multiplex. */
+(function () {
+  'use strict';
+  var d = document, main = d.getElementById('main');
+  if (!main || d.body.getAttribute('data-ads') === '0' || !d.querySelector('script[src*="adsbygoogle.js"]')) return;
+  var CLIENT = 'ca-pub-5935207738848708', UNITS = { display: '2358914532', article: '2020003182', multiplex: '4837738215' };
+  var TOUCHY = 'button,.btn,form,input,select,.acts,[data-ifsc-out],.finder,.az,table,[data-recent]';
+  function touchy(el) { return !!el && el.nodeType === 1 && (el.matches(TOUCHY) || !!el.querySelector(TOUCHY)); }
+  /* what matters is the part of a block that touches the ad: its last piece (block above) or its first piece (block below) */
+  function edge(el, last) { if (!el) return false; if (el.matches(TOUCHY)) return true; var c = last ? el.lastElementChild : el.firstElementChild; return touchy(c || el); }
+  function unit(kind) {
+    var box = d.createElement('aside');
+    box.className = 'adbox wrap'; box.setAttribute('aria-label', 'Advertisement');
+    var attrs = kind === 'article' ? 'style="display:block;text-align:center" data-ad-layout="in-article" data-ad-format="fluid"'
+      : kind === 'multiplex' ? 'style="display:block" data-ad-format="autorelaxed"' : 'style="display:block" data-ad-format="auto" data-full-width-responsive="true"';
+    box.innerHTML = '<small>Advertisement</small><ins class="adsbygoogle" ' + attrs + ' data-ad-client="' + CLIENT + '" data-ad-slot="' + UNITS[kind] + '"></ins>';
+    return box;
+  }
+  /* ask for the ad only when its place is about to be seen and has a real width (a place with no width makes the ad script fail) */
+  function fill(box) { if (box._done || !box.isConnected || box.offsetWidth < 120) return; box._done = 1; try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { box.remove(); } }
+  var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { fill(e.target); if (e.target._done) io.unobserve(e.target); } }); }, { rootMargin: '700px 0px' }) : null;
+  function show(box) { if (io) io.observe(box); else setTimeout(function () { fill(box); }, 1200); }
+  /* put a unit between two blocks, only where neither neighbour has anything to tap */
+  function between(before, kind) {
+    var prev = before.previousElementSibling;
+    if (touchy(prev) || edge(before, false) || (prev && prev.classList.contains('adbox'))) return false;   // the block above must have nothing to tap at all
+    var box = unit(kind);
+    before.parentNode.insertBefore(box, before);
+    show(box);
+    return true;
+  }
+  var blocks = [].slice.call(main.children).filter(function (el) { return !el.hasAttribute('data-sponsor') && el.tagName !== 'SCRIPT' && el.tagName !== 'NOSCRIPT'; });
+  /* 1. first place: after the tool part of the page (the last block with a form, a filter or a table), one block further down */
+  var last = -1;
+  blocks.forEach(function (el, i) { if (el.querySelector('.finder,form,table,.az')) last = i; });
+  var placed = 0;
+  for (var i = Math.max(last + 1, 1); i < blocks.length && !placed; i++) if (between(blocks[i], 'display')) placed++;
+  /* 2. long reading pages: one in-article place before a heading near the middle */
+  var heads = [].slice.call(main.querySelectorAll('.prose h2')).filter(function (h) { return !h.closest('details,.result,.adbox'); });
+  if (main.offsetHeight > 2600 && heads.length >= 4) {
+    for (var k = Math.floor(heads.length / 2); k < heads.length; k++) {
+      var h = heads[k], prev = h.previousElementSibling;
+      if (!prev || touchy(prev) || touchy(h.nextElementSibling) || prev.classList.contains('adbox')) continue;
+      var box = unit('article'); box.classList.remove('wrap');
+      h.parentNode.insertBefore(box, h); show(box); placed++; break;
+    }
+  }
+  /* 3. end of the page: related-content (multiplex) place, above the sponsor card and the footer */
+  var end = unit('multiplex'), sp = main.querySelector('[data-sponsor]');
+  if (!edge(blocks[blocks.length - 1], true)) { if (sp) main.insertBefore(end, sp); else main.appendChild(end); show(end); }
+})();

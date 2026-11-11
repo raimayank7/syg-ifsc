@@ -58,3 +58,17 @@ th{font-family:var(--font);text-transform:uppercase;font-size:.78rem;letter-spac
 .ft-in{padding-top:18px}
 .ft-end{align-items:center}
 .ft-end a{color:inherit}
+
+/* fixed advertisement places (ifsc.js): labelled, with room around them, closed when no ad comes */
+.adbox{margin:28px auto;padding-top:6px;padding-bottom:6px;text-align:center;clear:both;min-width:0;overflow:hidden}
+.adbox>small{display:block;color:var(--soft);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.adbox:has(ins[data-ad-status=unfilled]){display:none}
+.prose .adbox{margin:26px 0}
+@media print{.adbox{display:none!important}}
+
+/* logo: larger than the family's 30 px (owner: "logo size is a bit small") */
+.brand .mk{height:44px}
+.hd-in{min-height:68px}
+@media (max-width:640px){.brand .mk{height:36px}}
+@media (max-width:380px){.brand .mk{height:30px}}
+.ft-brand .mk{height:50px}
