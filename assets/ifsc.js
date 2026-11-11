@@ -195,7 +195,12 @@
   /* ask for the ad only when its place is about to be seen and has a real width (a place with no width makes the ad script fail) */
   function fill(box) { if (box._done || !box.isConnected || box.offsetWidth < 120) return; box._done = 1; try { (window.adsbygoogle = window.adsbygoogle || []).push({}); } catch (e) { box.remove(); } }
   var io = 'IntersectionObserver' in window ? new IntersectionObserver(function (es) { es.forEach(function (e) { if (e.isIntersecting) { fill(e.target); if (e.target._done) io.unobserve(e.target); } }); }, { rootMargin: '700px 0px' }) : null;
-  function show(box) { if (io) io.observe(box); else setTimeout(function () { fill(box); }, 1200); }
+  var boxes = [], tick = 0;
+  function near() { boxes.forEach(function (b) { if (!b._done && b.getBoundingClientRect().top < innerHeight + 700) fill(b); }); }
+  function show(box) { boxes.push(box); if (io) io.observe(box); }
+  /* a second way to notice a place coming near, for browsers where the observer stays silent */
+  addEventListener('scroll', function () { if (!tick) tick = setTimeout(function () { tick = 0; near(); }, 250); }, { passive: true });
+  setTimeout(near, 2500);
   /* put a unit between two blocks, only where neither neighbour has anything to tap */
   function between(before, kind) {
     var prev = before.previousElementSibling;
