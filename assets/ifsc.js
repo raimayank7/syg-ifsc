@@ -146,7 +146,7 @@
           'The account itself is safe: it is now an account of ' + esc(ev.into) + '.</p>';
         if (r[7]) {
           what += '<p class="ask"><b>Do you want to know the new IFSC code of this branch?</b></p>';
-          acts = '<button class="btn" type="button" data-new="' + esc(r[7]) + '" data-old="' + code + '" data-why="' + esc(r[8] === 1 ? 'It is worked out by the rule ' + ev.into + ' published for these branches, and it is in the current list.' : 'We matched it by branch name and place, so confirm it with ' + ev.into + ' before you pay.') + '">Yes, show the new code</button>' +
+          acts = '<button class="btn" type="button" data-new="' + esc(r[7]) + '" data-old="' + code + '" data-why="' + esc(r[8] === 3 ? 'It comes from the list of old and new codes that ' + ev.into + ' published for these branches, and it is in the current list.' : r[8] === 1 ? 'It is worked out by the rule ' + ev.into + ' published for these branches, and it is in the current list.' : 'We matched it by branch name and place, so confirm it with ' + ev.into + ' before you pay.') + '">Yes, show the new code</button>' +
             '<a class="btn ghost" href="/merged-banks/' + ev.slug + '/">No, tell me about the merger</a>';
         } else {
           what += '<p>We could not match this old branch to one current branch of ' + esc(ev.into) + ' with confidence (some branches were closed or joined with a nearby branch after the merger). Ask the account holder for the new code, or look for the branch in the list of ' + esc(ev.into) + '.</p>';
