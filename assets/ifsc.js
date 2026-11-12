@@ -66,6 +66,7 @@
   function check(raw, quiet) {
     var code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!code) { if (!quiet) say('<h2>Type a code first</h2><p>An IFSC code has 11 characters, for example SBIN0000691.</p>'); return; }
+    if (/^[A-Z]{4}IN[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(code)) { swiftCode(code); return; }   // a SWIFT code of an Indian bank: 5th and 6th characters IN
     if (code.length === 11 && code.charAt(4) === 'O') code = code.slice(0, 4) + '0' + code.slice(5);   // letter O typed for the zero
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(code)) {
       var why = code.length !== 11 ? 'It has ' + code.length + ' characters; an IFSC code has exactly 11.' : !/^[A-Z]{4}/.test(code) ? 'The first 4 characters must be letters (the bank).' : 'The 5th character must be the digit zero.';
@@ -86,18 +87,44 @@
         var line = b[0] + ', ' + r[1] + ' branch' + (r[2] ? ', ' + r[2] : '') + ': IFSC ' + code + (r[5] ? ', MICR ' + r[5] : '');
         var was = from && from.n === code ? '<p class="note">This is the code that replaced the old code <b class="mono">' + esc(from.o) + '</b>. ' + esc(from.w) + '</p>' : '';
         from = null;
+        if (swiftNote && r[7] === swiftNote) was = '<p class="note">The SWIFT code <b class="mono">' + esc(swiftNote) + '</b> belongs to this branch. A sender abroad uses the SWIFT code; the IFSC code below is for transfers inside India.</p>' + was;
+        swiftNote = null;
         say(was + '<h2>' + esc(b[0]) + '</h2><p class="big">' + code + '</p><p><b>' + esc(r[1]) + '</b>' + (r[2] ? ', ' + esc(r[2]) : '') + (s[0] ? ', ' + esc(s[0]) : '') + '</p>' +
           '<dl class="facts"><dt>Address</dt><dd>' + esc(r[4] || 'Not given') + '</dd><dt>MICR code</dt><dd>' + esc(r[5] || 'None for this branch') + '</dd>' +
           (r[6] ? '<dt>Phone</dt><dd>' + esc(r[6]) + '</dd>' : '') + (r[7] ? '<dt>SWIFT code</dt><dd>' + esc(r[7]) + '</dd>' : '') + '</dl>' +
           '<div class="tags">' + tag(f & 1, 'NEFT') + tag(f & 2, 'RTGS') + tag(f & 4, 'IMPS') + (f & 8 ? tag(1, 'UPI') : '') + '</div>' +
           '<div class="acts"><button class="btn" type="button" data-copy="' + code + '" data-done="' + code + ' copied">Copy code</button>' +
           '<button class="btn ghost" type="button" data-share="' + esc(line) + '" data-url="https://ifsc.shareyourgroup.com/?ifsc=' + code + '">Share</button>' +
+          (f & 16 && s[1] ? '<a class="btn ghost" href="https://branches.shareyourgroup.com/' + s[1] + '/' + b[1] + '/' + code.toLowerCase() + '/">Branch page</a>' : '') +
           (s[1] ? '<a class="btn ghost" href="/bank/' + b[1] + '/' + s[1] + '/">More ' + esc(b[0]) + ' branches</a>' : '') + '</div>' +
           '<p class="hint">Data as of ' + esc(ix.asof) + '. Confirm the code and account number before a large payment.</p>');
         N.recent('syg-ifsc', { u: code, t: b[0] + ', ' + r[1] });
         recent();
         try { history.replaceState(null, '', location.pathname + '?ifsc=' + code + '#check'); } catch (e) {}
       });
+    }).catch(function () { say('<h2>The data did not load</h2><p>Check your internet connection and press Check code again.</p>'); });
+  }
+  /* a SWIFT code: the branch it belongs to, where our list has it. A code that is not in the list is never called wrong. */
+  var swiftNote = null;
+  function swiftCode(code) {
+    out.innerHTML = '<div class="shim" style="height:150px;margin-top:14px"></div>';
+    N.json('/data/swift.json').then(function (j) {
+      var b = j.b[code.slice(0, 4)], ifsc = j.c[code], more = '<p class="hint">SWIFT codes are issued by SWIFT, not by us. Confirm the code with the bank before someone sends you money. <a href="/receive-money-from-abroad/">How to receive money from abroad</a></p>';
+      if (ifsc) { swiftNote = code; check(ifsc); return; }
+      var head = '<p class="tags"><span class="tag yes">SWIFT code</span></p>';
+      if (code.length === 8 && b && b[3] === code) {
+        say(head + '<h2>' + esc(b[0]) + '</h2><p class="big">' + esc(code) + '</p><p>This is the SWIFT code of ' + esc(b[0]) + ' for the whole bank in our data. A sender abroad uses it together with your name, account number and branch. Ask the bank whether your branch needs anything more.</p>' +
+          '<div class="acts"><button class="btn" type="button" data-copy="' + code + '" data-done="' + code + ' copied">Copy code</button><a class="btn ghost" href="/bank/' + b[1] + '/">' + esc(b[0]) + ' IFSC codes</a></div>' + more);
+      } else if (code.length === 8 && b && b[2]) {
+        say(head + '<h2>' + esc(b[0]) + '</h2><p class="big">' + esc(code) + '</p><p>These are the first eight characters of the SWIFT codes of ' + esc(b[0]) + '. Eight characters alone name the bank\'s main office. ' + b[2].toLocaleString('en-IN') + ' of its branches have a full 11-character code of their own in our list.</p>' +
+          '<div class="acts"><a class="btn" href="/swift/' + b[1] + '/">See the branch codes</a></div>' + more);
+      } else if (b) {
+        say('<h2>This branch code is not in our list</h2><p class="big">' + esc(code) + '</p><p>The first four letters belong to ' + esc(b[0]) + ', but our list has no branch with this exact SWIFT code. That does not mean the code is wrong: our list holds only the codes in the open data we use. Check it with the bank.</p>' +
+          '<div class="acts">' + (b[2] ? '<a class="btn" href="/swift/' + b[1] + '/">' + esc(b[0]) + ' SWIFT codes</a>' : '<a class="btn" href="/swift/">SWIFT codes</a>') + '</div>' + more);
+      } else {
+        say('<h2>This looks like a SWIFT code, but it is not in our list</h2><p class="big">' + esc(code) + '</p><p>A SWIFT code has 8 or 11 characters with IN (India) in the fifth and sixth places, and this one fits. Our list holds the SWIFT codes of only a few banks, so we cannot tell you whose it is. That does not mean the code is wrong: check it with the bank.</p>' +
+          '<div class="acts"><a class="btn" href="/swift/">SWIFT codes in our list</a></div>' + more);
+      }
     }).catch(function () { say('<h2>The data did not load</h2><p>Check your internet connection and press Check code again.</p>'); });
   }
   /* a code that is no longer in use: say what happened to it, and offer the code that replaced it */
