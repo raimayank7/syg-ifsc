@@ -98,6 +98,7 @@
           (f & 16 && s[1] ? '<a class="btn ghost" href="https://branches.shareyourgroup.com/' + s[1] + '/' + b[1] + '/' + code.toLowerCase() + '/">Branch page</a>' : '') +
           (s[1] ? '<a class="btn ghost" href="/bank/' + b[1] + '/' + s[1] + '/">More ' + esc(b[0]) + ' branches</a>' : '') + '</div>' +
           '<p class="hint">Data as of ' + esc(ix.asof) + '. Confirm the code and account number before a large payment.</p>');
+        nearby(ix, code, r);
         N.recent('syg-ifsc', { u: code, t: b[0] + ', ' + r[1] });
         recent();
         try { history.replaceState(null, '', location.pathname + '?ifsc=' + code + '#check'); } catch (e) {}
@@ -127,6 +128,35 @@
       }
     }).catch(function () { say('<h2>The data did not load</h2><p>Check your internet connection and press Check code again.</p>'); });
   }
+  /* under a checked code: the branches of OTHER banks in the same PIN code area (taken from the PIN code in each address) */
+  function nearby(ix, code, r) {
+    var m = String(r[4] || '').match(/(?:^|\D)([1-9]\d{2})\s?(\d{3})(?!\d)/g);
+    if (!m) return;
+    var pin = m[m.length - 1].replace(/\D/g, '');
+    N.json('/data/pin/' + pin.slice(0, 3) + '.json').then(function (j) {
+      var all = (j[pin] || []).filter(function (x) { return x[0] !== code; });
+      var others = all.filter(function (x) { return x[1] !== r[0]; }), same = all.length - others.length;
+      if (!others.length || out.textContent.indexOf(code) < 0) return;
+      others.sort(function (a, c) { return ix.banks[a[1]][0] < ix.banks[c[1]][0] ? -1 : ix.banks[a[1]][0] > ix.banks[c[1]][0] ? 1 : 0; });
+      var SHOW = 12, banks = {}, turn = [];
+      others.forEach(function (x) { banks[x[1]] = (banks[x[1]] || 0) + 1; x.push(banks[x[1]]); });
+      others.sort(function (a, c) { return a[3] - c[3]; });      // one branch of every bank first, then their second branches (the sort keeps the name order)
+      var rows = others.map(function (x, i) {
+        return '<tr' + (i >= SHOW ? ' hidden' : '') + '><td data-l="Bank">' + esc(ix.banks[x[1]][0]) + '</td><td data-l="Branch">' + esc(x[2]) + '</td><td data-l="IFSC code"><a class="mono" style="display:inline-block;padding:11px 0" href="/?ifsc=' + x[0] + '#check">' + x[0] + '</a></td></tr>';
+      }).join('');
+      var box = d.createElement('div');
+      box.className = 'result rise';
+      box.innerHTML = '<h2>Other banks near this branch</h2><p>' + others.length + (others.length === 1 ? ' branch' : ' branches') + ' of ' + Object.keys(banks).length + (Object.keys(banks).length === 1 ? ' other bank has' : ' other banks have') +
+        ' the same PIN code, <b>' + pin + '</b>, in ' + (others.length === 1 ? 'its address' : 'their addresses') + ':</p>' +
+        '<div class="tbl"><table class="stack"><thead><tr><th>Bank</th><th>Branch</th><th>IFSC code</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        (others.length > SHOW ? '<p><button class="btn ghost" type="button" data-more>Show all ' + others.length + ' branches</button></p>' : '') +
+        (same ? '<p class="hint">' + esc(ix.banks[r[0]][0]) + ' has ' + same + ' more ' + (same === 1 ? 'branch' : 'branches') + ' with this PIN code.</p>' : '') +
+        '<p class="hint">A PIN code covers one post office delivery area, so these branches are close by, not always on the same street. Tap a code to check it.</p>';
+      var more = box.querySelector('[data-more]');
+      if (more) more.addEventListener('click', function () { [].forEach.call(box.querySelectorAll('tr[hidden]'), function (t) { t.hidden = false; }); more.parentNode.hidden = true; });
+      out.appendChild(box);
+    }).catch(function () {});
+  }
   /* a code that is no longer in use: say what happened to it, and offer the code that replaced it */
   var from = null;
   var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -145,7 +175,7 @@
         what = '<p><b>What happened:</b> ' + esc(ev.old) + ' merged into ' + esc(ev.into) + (/^the /.test(ev.on) ? ' in ' : ' on ') + esc(ev.on) + '. ' + (ev.stop ? 'Its old IFSC codes stopped working on ' + esc(ev.stop) + '. A payment sent to this code now fails and the money comes back. ' : 'This code is no longer in the list of the Reserve Bank, so a payment sent to it is likely to be refused and returned. ') +
           'The account itself is safe: it is now an account of ' + esc(ev.into) + '.</p>';
         if (r[7]) {
-          if (r[9]) what += '<p>After the merger this branch first got the ' + esc(ev.into) + ' code <b class="mono">' + esc(r[9]) + '</b>, which has left the list of the Reserve Bank since. We found the current branch by its name and place.</p>';
+          if (r[9]) what += '<p>After the merger this branch first got the ' + esc(ev.into) + ' code <b class="mono">' + esc(r[9]) + '</b>, which has left the list of the Reserve Bank since.' + (r[8] === 3 ? ' ' + esc(ev.into) + ' later listed the branch it was joined with.' : ' We found the current branch by its name and place.') + '</p>';
           what += '<p class="ask"><b>Do you want to know the new IFSC code of this branch?</b></p>';
           acts = '<button class="btn" type="button" data-new="' + esc(r[7]) + '" data-old="' + code + '" data-why="' + esc(r[8] === 3 ? 'It comes from the list of old and new codes that ' + ev.into + ' published for these branches, and it is in the current list.' : r[8] === 1 && ev.grp === 'sbi' ? 'It follows the numbering in the lists State Bank of India published after the merger, and it is in the current list.' : r[8] === 1 ? 'It is worked out by the rule ' + ev.into + ' published for these branches, and it is in the current list.' : 'We matched it by branch name and place, so confirm it with ' + ev.into + ' before you pay.') + '">Yes, show the new code</button>' +
             '<a class="btn ghost" href="/merged-banks/' + ev.slug + '/">No, tell me about the merger</a>';
@@ -167,8 +197,8 @@
         head = 'This code of ' + esc(r[1]) + ' is no longer in use';
         what = '<p><b>What happened:</b> ' + esc(r[1]) + ' is still working, but this branch code is no longer in the list of the Reserve Bank. A bank takes a code out when it closes a branch, joins it with a nearby branch or gives the branch a new code. ' +
           'The accounts were not closed: they moved to another branch of ' + esc(r[1]) + ', and that branch has its own code.</p>' +
-          (r[7] ? '<p class="ask"><b>We found a current branch with the same name in the same place. Do you want to see its code?</b></p>' : '<p>Ask the account holder for the code printed on a new cheque book or passbook, or look for the branch below.</p>');
-        acts = (r[7] ? '<button class="btn" type="button" data-new="' + esc(r[7]) + '" data-old="' + code + '" data-why="We matched it by branch name and place, so confirm it with the bank before you pay.">Yes, show that code</button>' : '') +
+          (r[7] ? '<p class="ask"><b>' + (r[8] === 3 ? esc(r[1]) + ' listed the branch that took this one over.' : 'We found a current branch with the same name in the same place.') + ' Do you want to see its code?</b></p>' : '<p>Ask the account holder for the code printed on a new cheque book or passbook, or look for the branch below.</p>');
+        acts = (r[7] ? '<button class="btn" type="button" data-new="' + esc(r[7]) + '" data-old="' + code + '" data-why="' + (r[8] === 3 ? 'It comes from the list of joined branches that the bank published, and it is in the current list.' : 'We matched it by branch name and place, so confirm it with the bank before you pay.') + '">Yes, show that code</button>' : '') +
           '<a class="btn' + (r[7] ? ' ghost' : '') + '" href="/bank/' + cur[1] + '/' + (s[1] ? s[1] + '/' : '') + '">See ' + esc(r[1]) + ' branches' + (s[0] ? ' in ' + esc(s[0]) : '') + '</a>';
       } else {
         head = 'This is an old code of ' + esc(r[1]);
